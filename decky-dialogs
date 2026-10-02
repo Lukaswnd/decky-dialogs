@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import socket
+import sys
+
+
+SOCKET_PATH = "/tmp/decky-dialogs.sock"
+
+
+def send(payload, wait_timeout):
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8") + b"\n"
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(wait_timeout)
+        client.connect(SOCKET_PATH)
+        client.sendall(encoded)
+        client.shutdown(socket.SHUT_WR)
+
+        chunks = []
+        while True:
+            chunk = client.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                break
+
+    return b"".join(chunks).decode("utf-8").strip()
+
+
+def parse_button(value):
+    if "=" in value:
+        button_id, label = value.split("=", 1)
+    else:
+        button_id = value
+        label = value
+    if not button_id or not label:
+        raise argparse.ArgumentTypeError("button must be ID=Label")
+    return {"id": button_id, "label": label}
+
+
+def prompt_command(arguments):
+    buttons = arguments.button or [{"id": "ok", "label": "OK"}]
+    input_options = None
+    if arguments.input:
+        input_options = {
+            "label": arguments.input_label,
+            "placeholder": arguments.placeholder,
+            "default": arguments.default_value,
+        }
+
+    payload = {
+        "type": "prompt",
+        "title": arguments.title,
+        "body": arguments.text,
+        "buttons": buttons,
+        "timeout": arguments.timeout,
+        "input": input_options,
+    }
+    if arguments.id:
+        payload["id"] = arguments.id
+
+    response_text = send(payload, arguments.timeout + 10)
+    if not response_text:
+        print("decky-dialogs: server closed without a response", file=sys.stderr)
+        return 2
+
+    try:
+        response = json.loads(response_text)
+    except json.JSONDecodeError:
+        print(response_text, file=sys.stderr)
+        return 2
+
+    print(json.dumps(response, ensure_ascii=False))
+    status = response.get("status")
+    if status == "selected":
+        return 0
+    if status == "timeout":
+        return 3
+    if status == "dismissed":
+        return 4
+    return 2
+
+
+def notify_command(arguments):
+    if len(arguments.message) == 1:
+        title = "Decky Dialogs"
+        body = arguments.message[0]
+    else:
+        title = arguments.message[0]
+        body = " ".join(arguments.message[1:])
+
+    response = send(
+        {
+            "type": "notify",
+            "title": title,
+            "body": body,
+            "timeout": arguments.timeout,
+        },
+        5,
+    )
+    if response != "OK":
+        print(response or "decky-dialogs: no acknowledgement", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "prompt":
+        parser = argparse.ArgumentParser(prog="decky-dialogs prompt")
+        parser.add_argument("--id")
+        parser.add_argument("--title", default="Decky Dialogs")
+        parser.add_argument("--text", "--body", dest="text", default="")
+        parser.add_argument(
+            "--button",
+            action="append",
+            type=parse_button,
+            help="repeatable ID=Label button definition",
+        )
+        parser.add_argument("--timeout", type=float, default=30.0)
+        parser.add_argument("--input", action="store_true")
+        parser.add_argument("--input-label", default="Input")
+        parser.add_argument("--placeholder", default="")
+        parser.add_argument("--default-value", default="")
+        return prompt_command(parser.parse_args(sys.argv[2:]))
+
+    parser = argparse.ArgumentParser(
+        prog="decky-dialogs",
+        usage="decky-dialogs [--timeout SECONDS] [TITLE] MESSAGE",
+    )
+    parser.add_argument("--timeout", type=float)
+    parser.add_argument("message", nargs="+")
+    return notify_command(parser.parse_args())
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (OSError, ValueError) as error:
+        print(f"decky-dialogs: {error}", file=sys.stderr)
+        raise SystemExit(2)

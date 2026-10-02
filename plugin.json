@@ -1,0 +1,10 @@
+{
+  "name": "Decky Dialogs",
+  "author": "Local",
+  "flags": ["debug", "_root"],
+  "api_version": 1,
+  "publish": {
+    "tags": ["utility", "notification", "dialog"],
+    "description": "Display SteamOS Gaming Mode toasts and interactive dialogs requested by local or remote scripts."
+  }
+}
