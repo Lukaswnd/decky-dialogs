@@ -1,6 +1,6 @@
 {
   "name": "decky-dialogs",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Display SteamOS Gaming Mode toasts and interactive dialogs from local or remote scripts",
   "type": "module",
   "repository": {
@@ -9,7 +9,6 @@
   },
   "scripts": {
     "build": "rollup -c",
-    "release:patch": "bash scripts/release.sh",
     "release": "bash scripts/release.sh"
   },
   "dependencies": {
